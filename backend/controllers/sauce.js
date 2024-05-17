@@ -12,8 +12,8 @@ exports.createSauce = (req, res, next) => {
       imageUrl: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`,
       likes:0,
       dislikes:0,
-      userLiked:[],
-      userDisliked:[]
+      usersLiked:[],
+      usersDisliked:[]
     });
 
     Sauce.save()
@@ -81,34 +81,50 @@ exports.findOneSauce = (req, res, next) => {
       .catch(error => res.status(404).json({ error }));
   };
 
-  exports.updateLike = (req, res, next) => {
+exports.updateLike = (req, res, next) => {
     const { like } = req.body;
+    const userId = req.auth.userId;
 
-    let updatedLikes = {};
-
-    if (like === 1) {
-        updatedLikes = { likes: 1, dislikes: 0 };
-    } else if (like === 0) {
-        updatedLikes = { likes: 0, dislikes: 0 };
-    } else if (like === -1) {
-        updatedLikes = { likes: 0, dislikes: 1 };
-    } else {
-        return res.status(400).json({ error});
-    }
-
-    sauce.findOneAndUpdate(
-        { _id: req.params.id, userId: req.auth.userId },
-        updatedLikes,
-        { new: true }
-    )
-    .then(updatedSauce => {
-        if (!updatedSauce) {
-            return res.status(401).json({ error });
+    sauce.findOne({ _id: req.params.id })
+    .then(sauce => {
+        if (!sauce) {
+            return res.status(404).json({ error: 'Sauce not found' });
         }
-        res.status(200).json({ message: 'Likes modifiés!', sauce: updatedSauce });
+        if (like === 1) {
+            if (!sauce.usersLiked.includes(userId)) {
+                sauce.usersLiked.push(userId);
+                sauce.likes = sauce.usersLiked.length;
+                if (sauce.usersDisliked.includes(userId)) {
+                    sauce.usersDisliked = sauce.usersDisliked.filter(id => id !== userId);
+                    sauce.dislikes = sauce.usersDisliked.length;
+                }
+            }
+        } else if (like === 0) {
+            sauce.usersLiked = sauce.usersLiked.filter(id => id !== userId);
+            sauce.likes = sauce.usersLiked.length;
+            sauce.usersDisliked = sauce.usersDisliked.filter(id => id !== userId);
+            sauce.dislikes = sauce.usersDisliked.length;
+        } else if (like === -1) {
+            if (!sauce.usersDisliked.includes(userId)) {
+                sauce.usersDisliked.push(userId);
+                sauce.dislikes = sauce.usersDisliked.length;
+                if (sauce.usersLiked.includes(userId)) {
+                    sauce.usersLiked = sauce.usersLiked.filter(id => id !== userId);
+                    sauce.likes = sauce.usersLiked.length;
+                }
+            }
+        } else {
+            return res.status(400).json({ error: 'Invalid like value' });
+        }
+        sauce.save()
+        .then(updatedSauce => res.status(200).json({ message: 'Likes modifiés!', sauce: updatedSauce }))
+        .catch(error => {
+            console.error("Erreur update sauce:", error);
+            res.status(400).json({ error: 'Echec de mise à jour' });
+        });
     })
     .catch(error => {
-        console.error("Erreur update sauce:", error);
-        res.status(400).json({ error: 'Echec de mise à jour' });
+        console.error("Erreur serveur:", error);
+        res.status(500).json({ error: 'Erreur serveur' });
     });
 };
